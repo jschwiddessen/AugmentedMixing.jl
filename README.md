@@ -6,14 +6,14 @@
 
 __AugmentedMixing.jl__ is a Julia implementation of the **Augmented Mixing Method** for solving general large-scale SDPs of the form
 
-$$
+```math
 \begin{array}{rl}
 \text{minimize} \quad & \displaystyle \sum_{i=1}^q \langle C_i, X_i \rangle \\[1.2ex]
 \text{subject to} \quad & \displaystyle \sum_{i=1}^q \mathcal{A}_i(X_i) = a, \\\\
 & \displaystyle \sum_{i=1}^q \mathcal{B}_i(X_i) \geq b, \\\\
 & X_i \in \mathcal{S}_+^{n_i}, \quad i = 1,\ldots, q.
 \end{array}
-$$
+```
 
 This method features a Burer-Monteiro factorization-based algorithm in which all factorization matrices are updated in a column-wise fashion and is in particular designed to handle a large number of inequality constraints.
 
