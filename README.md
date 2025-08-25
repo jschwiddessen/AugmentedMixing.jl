@@ -9,9 +9,9 @@ __AugmentedMixing.jl__ is a Julia implementation of the **Augmented Mixing Metho
 $$
 \begin{array}{rl}
 \text{minimize} \quad & \displaystyle \sum_{i=1}^q \langle C_i, X_i \rangle \\[1.2ex]
-\text{subject to} \quad & \displaystyle \sum_{i=1}^q \mathcal{A}_i(X_i) = a, \\
-& \displaystyle \sum_{i=1}^q \mathcal{B}_i(X_i) \geq b, \\
-& X_i \in \mathcal{S}_+^{n_i}, \quad i = 1,\ldots, q. \\
+\text{subject to} \quad & \displaystyle \sum_{i=1}^q \mathcal{A}_i(X_i) = a, \\\\
+& \displaystyle \sum_{i=1}^q \mathcal{B}_i(X_i) \geq b, \\\\
+& X_i \in \mathcal{S}_+^{n_i}, \quad i = 1,\ldots, q.
 \end{array}
 $$
 
