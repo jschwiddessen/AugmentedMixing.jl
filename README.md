@@ -18,16 +18,16 @@ __AugmentedMixing.jl__ is a Julia implementation of the **Augmented Mixing Metho
 This method features a Burer-Monteiro factorization-based algorithm in which all factorization matrices are updated in a column-wise fashion and is in particular designed to handle a large number of inequality constraints.
 
 ## Installation
-This package is not yet registered in the Julia General registry.
-You can install the latest version directly from GitHub:
+This package is registered in the Julia General registry. To install it, do the following:
 
-```julia
-using Pkg
-Pkg.add(url="https://github.com/jschwiddessen/AugmentedMixing.jl.git")
+From the Julia REPL, press `]` to enter Pkg mode and run:
+```julia-repl
+pkg> add AugmentedMixing
 ```
+**Requirements:** Julia v1.11 or later.
 
 ## References
-This package is based on the preprint
+This package is based on the following preprint:
 
 Daniel Brosch, Jan Schwiddessen, Angelika Wiegele. (2025). _The Augmented Mixing Method: Computing High-Accuracy Primal-Dual Solutions to Large-Scale SDPs via Column Updates._ [Manuscript submitted for publication].
 
