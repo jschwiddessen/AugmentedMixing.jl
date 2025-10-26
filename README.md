@@ -120,6 +120,8 @@ Creating "data" took 0.00 seconds
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ```
 
+For warm-starting (including high-precision runs), a list of all available parameters of augmented_mixing(), and different ways to specify SDPs, we refer to the documentation of this package and the preprint listed below.
+
 ## References
 This package is based on the following preprint:
 
