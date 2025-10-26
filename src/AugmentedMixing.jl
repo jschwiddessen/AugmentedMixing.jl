@@ -13,7 +13,7 @@ object to work with extended precision.
 - [`SdpData`](@ref) - struct to specify the SDP to be solved
 - [`WarmStart`](@ref) - struct returned by [`augmented_mixing`](@ref); can be used for doing a warm start
 
-We refer to the preprint https://arxiv.org/abs/2507.20386 for implementation details.
+We refer to the preprint https://arxiv.org/abs/2507.20386 for implementation details and in-depth explanations of all parameters.
 """
 module AugmentedMixing
 

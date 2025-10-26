@@ -43,6 +43,11 @@ Constructors for single-block SDPs:
 
     sdp = SdpData(A::M, b::Vector{T}, C::M2, index_ineq_start::Int64)
     sdp = SdpData(A::Vector{M}, b::Vector{T}, C::M2, index_ineq_start::Int64)
+    
+Converting to a different floating-point type (e.g. `Float64` -> `BigFloat`):
+WARNING: Use with care! This cannot increase the precision of the SDP data itself.
+
+    sdp = SdpData(sdp::SdpData{T,M,M2}, T_new::Type{<:AbstractFloat})
 """
 struct SdpData{
     T<:AbstractFloat,
