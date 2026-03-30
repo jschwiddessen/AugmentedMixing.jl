@@ -39,19 +39,19 @@ Two constructors are provided:
 A struct WarmStart is returned by [`augmented_mixing`](@ref) and can be fed back via the
 `warm_start` keyword to continue a previous run or to refine a solution after promoting to extended precision.
 """
-struct WarmStart{T<:AbstractFloat}
+struct WarmStart{T}
     mu::T # penalty parameter
     Vs::Vector{Matrix{T}} # Burer-Monteiro factorization matrices
     y::Vector{T} # dual multipliers
 
-    function WarmStart(mu::T, Vs::Vector{Matrix{T}}, y::Vector{T}) where {T<:AbstractFloat}
-        @assert mu > zero(T)
+    function WarmStart(mu::T, Vs::Vector{Matrix{T}}, y::Vector{T}) where {T}
+        @assert real(mu) > zero(real(eltype(T)))
         return new{T}(mu, Vs, y)
     end
 
     function WarmStart(
-        warm_start::WarmStart{T}, T_new::Type{<:AbstractFloat}
-    ) where {T<:AbstractFloat}
+        warm_start::WarmStart{T}, T_new::Type
+    ) where {T}
         return WarmStart(
             map(T_new, warm_start.mu), map.(T_new, warm_start.Vs), map.(T_new, warm_start.y)
         )
@@ -71,9 +71,9 @@ mutable struct Point{T}
         ns::Vector{Int64},
         ks::Vector{Int64},
         m::Int64,
-        mu_start::T;
+        mu_start::U;
         warm_start::Union{WarmStart,Nothing}=nothing,
-    ) where {T<:AbstractFloat}
+    ) where {T,U}
         if isnothing(warm_start)
             Vs::Vector{Matrix{T}} = []
             Xs::Vector{Matrix{T}} = []
@@ -82,7 +82,7 @@ mutable struct Point{T}
                 foreach(v -> v .= v ./ norm(v), eachcol(V))
                 push!(Vs, V)
                 X::Matrix{T} = V' * V
-                @assert issymmetric(X)
+                @assert ishermitian(X)
                 push!(Xs, X)
             end
             return new{T}(
@@ -120,7 +120,7 @@ include("SdpData.jl")
 
 # If something belongs to a specific block, the first index is always used to identify the block!
 struct Data{
-    T<:AbstractFloat,
+    T,
     M<:Union{Matrix{T},SparseMatrixCSC{T,Int64}}, # for constraints
     M2<:Union{Matrix{T},SparseMatrixCSC{T,Int64}}, # for cost matrices
 }
@@ -143,7 +143,7 @@ struct Data{
     function Data{T,M,M2}(
         sdp::SdpData{T,M,M2}, k::Int64
     ) where {
-        T<:AbstractFloat,
+        T,
         M<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
         M2<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
     }
@@ -189,7 +189,7 @@ struct Data{
             end
 
             # create Bi_tilde for this column
-            push!(Bi_tildes[b], As_vec[b][my_indicess[b][i], (1 + (i - 1) * n):(i * n)])
+            push!(Bi_tildes[b], As_vec[b][my_indicess[b][i], (1+(i-1)*n):(i*n)])
             Bi_tildes[b][i][:, i] .= zero(T)
             issparse(Bi_tildes[b][i]) && dropzeros!(Bi_tildes[b][i])
             @assert size(Bi_tildes[b][i]) == (length(my_indicess[b][i]), n)
@@ -205,7 +205,7 @@ struct Data{
             # create -Bi for this column
             push!(
                 minus_Bis[b],
-                transpose(-As_vec[b][my_indicess[b][i], vecInd(n, 1, i):vecInd(n, n, i)]),
+                conj(transpose(-As_vec[b][my_indicess[b][i], vecInd(n, 1, i):vecInd(n, n, i)])),
             )
         end
 
@@ -234,7 +234,7 @@ end # Data
 
 function barvinok_pataki_bound(
     sdp::SdpData{T,M}
-) where {T<:AbstractFloat,M<:Union{Matrix{T},SparseMatrixCSC{T,Int64}}}
+) where {T,M<:Union{Matrix{T},SparseMatrixCSC{T,Int64}}}
     m::Int64 = sdp.m
     n::Int64 = maximum(sdp.ns)
     return min(n, ceil(Int64, sqrt(2m)))
@@ -269,17 +269,18 @@ function f_and_g!(
     vi_old::Vector{T},
     data::Data{T,M},
 ) where {
-    T<:AbstractFloat,
+    T,
     M<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
     M2<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
 }
+    U = real(eltype(T))
     # When annotating the complexity, "m" always refers to length(data.my_indicess[b][i])
     my_indices::Vector{Int64} = data.my_indicess[b][i] # O(1)
     @views data.AX_new[my_indices] .= point.AX[my_indices] # O(m)
     norm_diff::T = dot(vi, vi) - dot(vi_old, vi_old) # O(k)
     @views data.AX_new[my_indices] .+= norm_diff .* data.Aj_iis[b][i][my_indices] # O(m)
     data.vi_diffs[b] .= vi .- vi_old # O(k)
-    mul!(data.V_T_vi_diffs[b], transpose(point.Vs[b]), data.vi_diffs[b]) # O(k*n)
+    mul!(data.V_T_vi_diffs[b], point.Vs[b]', data.vi_diffs[b]) # O(k*n)
     tmp_m::Vector{T} = data.tmp_my_indicess[b][i] # O(1)
     @views tmp_m .= data.AX_new[my_indices] # O(m)
     mul!(tmp_m, data.Bi_tildes[b][i], data.V_T_vi_diffs[b], T(2.0), one(T)) # O(m*n)
@@ -288,8 +289,8 @@ function f_and_g!(
     @views data.y_plus_mu_b_minus_AX[my_indices] .= point.y[my_indices] # O(m)
     @views data.y_plus_mu_b_minus_AX[my_indices] .+= point.mu .* data.b_minus_AX[my_indices] # O(m)
     for ineq in data.ineq_starts[b][i]:length(my_indices) # O(m)
-        if data.y_plus_mu_b_minus_AX[my_indices[ineq]] < zero(T) # O(1)
-            data.y_plus_mu_b_minus_AX[my_indices[ineq]] = zero(T) # O(1)
+        if real(data.y_plus_mu_b_minus_AX[my_indices[ineq]]) < zero(U) # O(1)
+            data.y_plus_mu_b_minus_AX[my_indices[ineq]] = zero(U) # O(1)
             data.b_minus_AX[my_indices[ineq]] = zero(T) # O(1)
         end
     end
@@ -303,11 +304,12 @@ function f_and_g!(
         point.CX +
         T(2) * dot(data.C_i_tildes[b][i], data.V_T_vi_diffs[b]) +
         sdp.Cs[b][i, i] * norm_diff # O(n)
-    @views return CX_new +
-                  T(0.5) *
-                  point.mu *
-                  dot(data.b_minus_AX[my_indices], data.b_minus_AX[my_indices]) +
-                  dot(point.y[my_indices], data.b_minus_AX[my_indices]) # O(m)
+
+    @views return real(CX_new +
+                       T(0.5) *
+                       point.mu *
+                       dot(data.b_minus_AX[my_indices], data.b_minus_AX[my_indices]) +
+                       dot(point.y[my_indices], data.b_minus_AX[my_indices])) # O(m)
 end
 
 function update_column!(
@@ -316,18 +318,18 @@ function update_column!(
     b::Int64,
     i::Int64,
     data::Data{T,M,M2},
-    delta::T,
-    epsilon::T,
+    delta::U,
+    epsilon::U,
     max_evals::Int64,
 ) where {
-    T<:AbstractFloat,
+    T,U,
     M<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
     M2<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
 }
     n::Int64 = sdp.ns[b]
     @assert 1 <= i && i <= n
-    @assert delta > zero(T)
-    @assert epsilon > zero(T)
+    @assert delta > zero(U)
+    @assert epsilon > zero(U)
     @assert max_evals > 0
 
     # Save current column vi to perform incremental updates/computations.
@@ -337,7 +339,7 @@ function update_column!(
     f_and_g!(data.tmp_vis[b], data.vi_olds[b], b, i, sdp, point, data.vi_olds[b], data)
 
     # Set g_tol such that we always make some progress compared to the starting solution.
-    g_tol::T = min(epsilon, delta * norm(data.tmp_vis[b], Inf))
+    g_tol::U = min(epsilon, delta * norm(data.tmp_vis[b], Inf))
 
     @views data.tmp_vis[b] .= data.vi_olds[b] # O(k)
 
@@ -358,10 +360,10 @@ function update_column!(
         data.tmp_vis[b], # starting point
         LBFGS(), # algorithm
         Optim.Options(;
-            x_abstol=zero(T), # Absolute tolerance in changes of the input vector x, in infinity norm. Defaults to 0.0.
-            x_reltol=zero(T), # Relative tolerance in changes of the input vector x, in infinity norm. Defaults to 0.0.
-            f_abstol=zero(T), # Absolute tolerance in changes of the objective value. Defaults to 0.0.
-            f_reltol=zero(T), # Relative tolerance in changes of the objective value. Defaults to 0.0.
+            x_abstol=zero(U), # Absolute tolerance in changes of the input vector x, in infinity norm. Defaults to 0.0.
+            x_reltol=zero(U), # Relative tolerance in changes of the input vector x, in infinity norm. Defaults to 0.0.
+            f_abstol=zero(U), # Absolute tolerance in changes of the objective value. Defaults to 0.0.
+            f_reltol=zero(U), # Relative tolerance in changes of the objective value. Defaults to 0.0.
             g_abstol=g_tol, # Absolute tolerance in the gradient, in infinity norm. Defaults to 1e-8. For gradient free methods, this will control the main convergence tolerance, which is solver specific.
             f_calls_limit=max_evals, # A soft upper limit on the number of objective calls. Defaults to 0 (unlimited).
             g_calls_limit=0, # A soft upper limit on the number of gradient calls. Defaults to 0 (unlimited).
@@ -384,9 +386,9 @@ function update_column!(
     @assert all(isfinite, data.tmp_vis[b])
     point.Vs[b][:, i] .= data.tmp_vis[b] # O(k)
 
-    @views mul!(point.Xs[b][:, i], transpose(point.Vs[b]), data.tmp_vis[b]) # O(k*n)
+    @views mul!(point.Xs[b][:, i], point.Vs[b]', data.tmp_vis[b]) # O(k*n)
     for j in 1:n
-        point.Xs[b][i, j] = point.Xs[b][j, i]
+        point.Xs[b][i, j] = conj(point.Xs[b][j, i])
     end
 
     my_indices::Vector{Int64} = data.my_indicess[b][i]
@@ -396,7 +398,7 @@ function update_column!(
         dot(data.tmp_vis[b], data.tmp_vis[b]) - dot(data.vi_olds[b], data.vi_olds[b]) # O(k)
     @views point.AX[my_indices] .+= norm_diff .* data.Aj_iis[b][i][my_indices] # O(m)
     data.vi_diffs[b] .= data.tmp_vis[b] .- data.vi_olds[b] # O(k)
-    mul!(data.V_T_vi_diffs[b], transpose(point.Vs[b]), data.vi_diffs[b]) # O(k*n)
+    mul!(data.V_T_vi_diffs[b], point.Vs[b]', data.vi_diffs[b]) # O(k*n)
 
     tmp::Vector{T} = data.tmp_my_indicess[b][i]
     @views tmp .= point.AX[my_indices]
@@ -464,9 +466,9 @@ Solve the SDP provided in `sdp` using the Augmented Mixing Method.
 We refer to the preprint https://arxiv.org/abs/2507.20386 for implementation details and further explanations of all optional keyword arguments.
 """
 function augmented_mixing(
-    original_sdp::SdpData{T,M,M2};
-    tol::T=T(1e-12),
-    mu_start::T=T(sqrt(maximum(original_sdp.ns))),
+    original_sdp::SdpData{T,M,M2}, ::Type{U}=real(eltype(T));
+    tol::U=real(eltype(T))(1e-12),
+    mu_start::U=U(sqrt(maximum(original_sdp.ns))),
     time_limit::Float64=typemax(Float64),
     max_iters::Int64=typemax(Int64),
     iters_Z::Int64=50,
@@ -474,36 +476,40 @@ function augmented_mixing(
     shuffling::Bool=false,
     double_sweep::Bool=false,
     warm_start::Union{WarmStart,Nothing}=nothing,
-    p::T=one(T),
-    delta::T=T(1e-2),
-    epsilon::T=T(1e-2),
+    p::U=one(U),
+    delta::U=U(1e-2),
+    epsilon::U=U(1e-2),
     max_evals::Int64=1000,
-    tau::T=T(1.03),
-    rat_min::T=T(0.8),
-    rat_max::T=T(1.2),
+    tau::U=U(1.03),
+    rat_min::U=U(0.8),
+    rat_max::U=U(1.2),
 ) where {
-    T<:AbstractFloat,
+    T,
+    U,
     M<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
     M2<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
 }
-    @assert tol > zero(T)
+    @assert tol > zero(U)
     @assert time_limit > 0.0
     @assert max_iters > 0
     @assert iters_Z > 0
-    @assert delta > zero(T)
-    @assert epsilon > zero(T)
+    @assert delta > zero(U)
+    @assert epsilon > zero(U)
     @assert max_evals > 0
-    @assert tau > one(T)
-    @assert rat_min > zero(T)
+    @assert tau > one(U)
+    @assert rat_min > zero(U)
     @assert rat_min < rat_max
 
     tstart::Float64 = time()
+
+
+    TReal = U
 
     print_dashed_line()
     @printf "coefficient ranges of original SDP:\n"
     print_coefficient_ranges(original_sdp)
 
-    sdp::SdpData{T,M,M2}, scale_constraints::Vector{T}, scale_A::T, scale_b::T, scale_C::T, time_scaling::Float64 = scale_sdp(
+    sdp::SdpData{T,M,M2}, scale_constraints::Vector{T}, scale_A::U, scale_b::U, scale_C::U, time_scaling::Float64 = scale_sdp(
         original_sdp, scaling
     ) # we work with this SDP internally
     if scaling
@@ -604,8 +610,8 @@ function augmented_mixing(
         total_sum_evals,
         last_iter_evals,
         last_max_evals,
-        zero(T), # p_rat
-        zero(T), # d_rat
+        zero(TReal), # p_rat
+        zero(TReal), # d_rat
         false, # double_sweep
     )
 
@@ -646,8 +652,8 @@ function augmented_mixing(
             end
         end
 
-        last_iter_evals[iter % length(last_iter_evals) + 1] = iter_evals
-        last_max_evals[iter % length(last_max_evals) + 1] = max_iter_evals
+        last_iter_evals[iter%length(last_iter_evals)+1] = iter_evals
+        last_max_evals[iter%length(last_max_evals)+1] = max_iter_evals
 
         # point.X always is up-to-date, i.e., we have point.X = point.V' * point.V
         # however, rounding errors might accumulate in point.CX and point.AX
@@ -693,14 +699,14 @@ function augmented_mixing(
         d_rat .= point.mu .* (point.AX .- AX_old)
 
         for ineq in (sdp.index_ineq_start):m
-            if p_rat[ineq] < zero(T) && point.y[ineq] == zero(T)
+            if real(p_rat[ineq]) < zero(TReal) && point.y[ineq] == zero(T)
                 p_rat[ineq] = zero(T)
                 d_rat[ineq] = zero(T)
             end
         end
 
-        norm_p_rat::T = norm(p_rat)
-        norm_d_rat::T = norm(d_rat)
+        norm_p_rat::TReal = norm(p_rat)
+        norm_d_rat::TReal = norm(d_rat)
 
         primal_obj *= scale_b * scale_C / scale_A
         dual_obj *= scale_b * scale_C / scale_A
@@ -748,20 +754,20 @@ function augmented_mixing(
         tmp_m .= b .- point.AX
         point.y .+= p .* point.mu .* tmp_m
         for ineq in (sdp.index_ineq_start):m
-            point.y[ineq] = max(zero(T), point.y[ineq])
+            point.y[ineq] = max(zero(TReal), real(point.y[ineq]))
         end
 
         # update penalty parameter
-        ratio::T = norm_p_rat / norm_d_rat
+        ratio::TReal = norm_p_rat / norm_d_rat
         if ratio < rat_min
             point.mu /= tau
         elseif ratio > rat_max
             point.mu *= tau
         end
 
-        @assert point.mu > 0
-        point.mu = max(point.mu, T(1e-8))
-        point.mu = min(point.mu, T(1e8))
+        @assert real(point.mu) > 0
+        point.mu = max(real(point.mu), TReal(1e-8))
+        point.mu = min(real(point.mu), TReal(1e8))
     end
 
     @assert status_code in [:tol, :time, :iter]
@@ -797,17 +803,19 @@ function compute_errors(
     tmp_m::Vector{T},
     iter::Int64,
     iters_Z::Int64,
-    tol::T,
+    tol::U,
 ) where {
-    T<:AbstractFloat,
+    T,U,
     M<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
     M2<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
 }
     @assert iter >= 0
     @assert iters_Z >= 1
-    @assert tol > zero(T)
+    @assert tol > zero(real(eltype(T)))
     @assert all(all.(isfinite, point.Xs))
-    @assert all(issymmetric, point.Xs)
+    @assert all(x->norm(x-x') <= 1e-7, point.Xs)
+
+    TReal = real(eltype(T))
 
     (;
         As::Vector{Vector{M}},
@@ -819,9 +827,9 @@ function compute_errors(
         index_ineq_start::Int64,
     ) = sdp
 
-    primal_obj::T = dot(Cs, point.Xs)
-    dual_obj::T = dot(b, point.y)
-    gap::T = abs(primal_obj - dual_obj) / (one(T) + abs(primal_obj) + abs(dual_obj))
+    primal_obj::TReal = real(dot(Cs, point.Xs))
+    dual_obj::TReal = real(dot(b, point.y))
+    gap::TReal = abs(primal_obj - dual_obj) / (one(T) + abs(primal_obj) + abs(dual_obj))
 
     #mul!(tmp_m, A, vec(point.X))
     # TODO make this better
@@ -835,30 +843,30 @@ function compute_errors(
     tmp_m .*= -one(T)
     tmp_m .+= b
     for ineq in index_ineq_start:m
-        tmp_m[ineq] = max(zero(T), tmp_m[ineq])
+        tmp_m[ineq] = max(zero(TReal), real(tmp_m[ineq]))
     end
-    pinf::T = norm(tmp_m, Inf) / (one(T) + norm(b, Inf))
+    pinf::TReal = norm(norm(tmp_m, Inf) / (one(T) + norm(b, Inf)))
 
     for b in eachindex(Atys, As_vec)
-        mul!(Atys[b], transpose(As_vec[b]), point.y)
+        mul!(Atys[b], As_vec[b]', point.y)
     end
     #Z_not_psd .= Symmetric(C .- reshape(Aty, n, n))
     for b in eachindex(Z_not_psds, Cs, ns)
         Z_not_psds[b] .= Cs[b]
         n = ns[b]
         for i in 1:n, j in i:n
-            Z_not_psds[b][i, j] -= Atys[b][i + n * (j - 1)]
-            Z_not_psds[b][j, i] = Z_not_psds[b][i, j]
+            Z_not_psds[b][i, j] -= Atys[b][i+n*(j-1)]
+            Z_not_psds[b][j, i] = conj(Z_not_psds[b][i, j])
         end
-        @assert issymmetric(Z_not_psds[b])
+        @assert ishermitian(Z_not_psds[b])
     end
 
-    dot_X_Z_not_psd::T = dot(point.Xs, Z_not_psds)
-    compl_not_psd_abs::T =
+    dot_X_Z_not_psd::TReal = real(dot(point.Xs, Z_not_psds))
+    compl_not_psd_abs::TReal =
         (abs(dot_X_Z_not_psd)) / (one(T) + abs(primal_obj) + abs(dual_obj))
 
-    dinf::T = typemax(T)
-    compl::T = typemax(T)
+    dinf::TReal = typemax(TReal)
+    compl::TReal = typemax(TReal)
 
     compute_Z::Bool =
         (iter % iters_Z == 0 && pinf < tol && gap < tol && compl_not_psd_abs < tol) ||
@@ -874,7 +882,7 @@ function compute_errors(
                     'V', 'A', 'U', Z_not_psds[b], 0.0, 0.0, 0, 0, 0.0
                 )
             else
-                F = eigen(Symmetric(Z_not_psds[b]))
+                F = eigen(Hermitian(Z_not_psds[b]))
                 eigenvalues = F.values
                 eigenvectors = F.vectors
             end
@@ -882,9 +890,9 @@ function compute_errors(
             #Z .= F.vectors * Diagonal(max.(F.values, zero(T))) * F.vectors'
             #fill!(tmp_n_n, zero(T))
             for i in 1:n, j in 1:n
-                tmp_n_ns[b][i, j] = sqrt(max(zero(T), eigenvalues[j])) * eigenvectors[i, j]
+                tmp_n_ns[b][i, j] = sqrt(max(zero(TReal), real(eigenvalues[j]))) * eigenvectors[i, j]
             end
-            mul!(Zs[b], tmp_n_ns[b], transpose(tmp_n_ns[b]))
+            mul!(Zs[b], tmp_n_ns[b], tmp_n_ns[b]')
             #@assert issymmetric(Zs[b])
 
             # to avoid cancellation when computing Z - Z_not_psd, directly compute Zdiff
@@ -893,11 +901,11 @@ function compute_errors(
             for i in 1:n
                 for j in 1:n
                     tmp_n_ns[b][i, j] =
-                        -sqrt(-min(zero(T), eigenvalues[j])) * eigenvectors[i, j]
+                        -sqrt(-min(zero(TReal), real(eigenvalues[j]))) * eigenvectors[i, j]
                 end
             end
 
-            mul!(Z_diffs[b], tmp_n_ns[b], transpose(tmp_n_ns[b]))
+            mul!(Z_diffs[b], tmp_n_ns[b], tmp_n_ns[b]')
             #@assert issymmetric(Z_diffs[b])
         end
 

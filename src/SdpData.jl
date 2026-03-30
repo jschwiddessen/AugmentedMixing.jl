@@ -50,7 +50,7 @@ WARNING: Use with care! This cannot increase the precision of the SDP data itsel
     sdp = SdpData(sdp::SdpData{T,M,M2}, T_new::Type{<:AbstractFloat})
 """
 struct SdpData{
-    T<:AbstractFloat,
+    T,
     M<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
     M2<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
 }
@@ -65,7 +65,7 @@ struct SdpData{
     function SdpData(
         As::Vector{Vector{M}}, b::Vector{T}, Cs::Vector{M2}, index_ineq_start::Int64
     ) where {
-        T<:AbstractFloat,
+        T,
         M<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
         M2<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
     }
@@ -87,8 +87,8 @@ struct SdpData{
         @assert all((ns[i], ns[i]) == size(Cs[i]) for i in eachindex(ns, Cs))
         @assert all((ns[i], ns[i]) == size(Ai) for i in eachindex(As) for Ai in As[i])
 
-        @assert all(issymmetric(C) for C in Cs)
-        @assert all(issymmetric(Ai) for A in As for Ai in A)
+        @assert all(ishermitian(C) for C in Cs)
+        @assert all(ishermitian(Ai) for A in As for Ai in A)
 
         # construct As_vec
         As_vec::Vector{M} = []
@@ -123,7 +123,7 @@ struct SdpData{
     function SdpData(
         A::Vector{M}, b::Vector{T}, C::M2, index_ineq_start::Int64
     ) where {
-        T<:AbstractFloat,
+        T,
         M<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
         M2<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
     }
@@ -133,7 +133,7 @@ struct SdpData{
     function SdpData(
         As_vec::Vector{M}, b::Vector{T}, Cs::Vector{M2}, index_ineq_start::Int64
     ) where {
-        T<:AbstractFloat,
+        T,
         M<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
         M2<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
     }
@@ -191,7 +191,7 @@ struct SdpData{
     function SdpData(
         A::M, b::Vector{T}, C::M2, index_ineq_start::Int64
     ) where {
-        T<:AbstractFloat,
+        T,
         M<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
         M2<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
     }
@@ -199,9 +199,9 @@ struct SdpData{
     end
 
     function SdpData(
-        sdp::SdpData{T,M,M2}, T_new::Type{<:AbstractFloat}
+        sdp::SdpData{T,M,M2}, T_new::Type
     ) where {
-        T<:AbstractFloat,
+        T,
         M<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
         M2<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
     }
@@ -217,11 +217,13 @@ end
 function scale_sdp(
     sdp::SdpData{T,M,M2}, use_scaling::Bool
 ) where {
-    T<:AbstractFloat,
+    T,
     M<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
     M2<:Union{Matrix{T},SparseMatrixCSC{T,Int64}},
 }
     tstart::Float64 = time()
+
+    TReal = real(eltype(T))
 
     #A s::Vector{Vector{M}} = deepcopy(sdp.As)
     As::Vector{Vector{M}} = map(x -> copy.(x), sdp.As)
@@ -257,14 +259,14 @@ function scale_sdp(
         end
     end
 
-    scale_A::T = use_scaling ? maximum(norm(Ai) for A in As for Ai in A) : one(T) # TODO parallelize?
+    scale_A::TReal = use_scaling ? maximum(norm(Ai) for A in As for Ai in A) : one(T) # TODO parallelize?
     #scale_A::T = use_scaling ? norm([norm(Ai) for A in As for Ai in A]) : one(T) # TODO parallelize?
-    scale_b::T = use_scaling ? norm(b) : one(T)
+    scale_b::TReal = use_scaling ? norm(b) : one(T)
     # scale_b::T = use_scaling ? scale_A : one(T)
     #scale_C::T = use_scaling ? maximum(norm(C) for C in Cs) : one(T)
-    scale_C::T = use_scaling ? norm([norm(C) for C in Cs]) : one(T)
+    scale_C::TReal = use_scaling ? norm([norm(C) for C in Cs]) : one(T)
     if iszero(scale_C)
-        scale_C = one(T)
+        scale_C = one(TReal)
     end
 
     if use_scaling
@@ -282,10 +284,10 @@ function scale_sdp(
     end
 
     @assert length(scale_constraints) == sdp.m
-    @assert minimum(scale_constraints) > zero(T)
-    @assert scale_A > zero(T)
-    @assert scale_b > zero(T)
-    @assert scale_C > zero(T)
+    @assert minimum(norm.(scale_constraints)) > zero(real(eltype(T)))
+    @assert norm(scale_A) > zero(real(eltype(T)))
+    @assert norm(scale_b) > zero(real(eltype(T)))
+    @assert norm(scale_C) > zero(real(eltype(T)))
 
     time_scaling::Float64 = time() - tstart
 
@@ -300,7 +302,7 @@ end
 
 function print_coefficient_ranges(
     sdp::SdpData{T,M}
-) where {T<:AbstractFloat,M<:Union{Matrix{T},SparseMatrixCSC{T,Int64}}}
+) where {T,M<:Union{Matrix{T},SparseMatrixCSC{T,Int64}}}
     min_val::T, max_val::T = coefficient_range(sdp.As)
     @printf "A range: [%.0e, %.0e]\n" min_val max_val
     min_val, max_val = coefficient_range(sdp.b)
@@ -309,7 +311,7 @@ function print_coefficient_ranges(
     @printf "C range: [%.0e, %.0e]\n" min_val max_val
 end
 
-function coefficient_range(As::Vector{Vector{Matrix{T}}}) where {T<:Real}
+function coefficient_range(As::Vector{Vector{Matrix{T}}}) where {T}
     min_val, max_val = typemax(T), zero(T)
     for A in As
         for Ai in A
@@ -325,13 +327,13 @@ function coefficient_range(As::Vector{Vector{Matrix{T}}}) where {T<:Real}
     return min_val, max_val
 end
 
-function coefficient_range(As::Vector{Vector{SparseMatrixCSC{T,Int64}}}) where {T<:Real}
-    min_val, max_val = typemax(T), zero(T)
+function coefficient_range(As::Vector{Vector{SparseMatrixCSC{T,Int64}}}) where {T}
+    min_val, max_val = typemax(real(eltype(T))), zero(real(eltype(T)))
     for A in As
         for Ai in A
             for x in nonzeros(Ai)
-                ax = abs(x)
-                if ax > zero(T)
+                ax = norm(x)
+                if ax > zero(real(eltype(T)))
                     min_val = min(min_val, ax)
                     max_val = max(max_val, ax)
                 end
@@ -341,11 +343,11 @@ function coefficient_range(As::Vector{Vector{SparseMatrixCSC{T,Int64}}}) where {
     return min_val, max_val
 end
 
-function coefficient_range(b::Vector{T}) where {T<:Real}
-    min_val, max_val = typemax(T), zero(T)
+function coefficient_range(b::Vector{T}) where {T}
+    min_val, max_val = typemax(real(eltype(T))), zero(real(eltype(T)))
     for x in b
-        ax = abs(x)
-        if ax > zero(T)
+        ax = norm(x)
+        if ax > zero(real(eltype(T)))
             min_val = min(min_val, ax)
             max_val = max(max_val, ax)
         end
@@ -357,7 +359,7 @@ function coefficient_range(Cs::Vector{Matrix{T}}) where {T<:Real}
     min_val, max_val = typemax(T), zero(T)
     for C in Cs
         for x in C
-            ax = abs(x)
+            ax = norm(x)
             if ax > zero(T)
                 min_val = min(min_val, ax)
                 max_val = max(max_val, ax)

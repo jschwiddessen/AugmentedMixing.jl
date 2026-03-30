@@ -37,7 +37,7 @@ function printUpdate(
     dinf::T,
     compl::T,
     compl_not_psd_abs::T,
-    point::Point{T},
+    point::Point{U},
     done::Bool,
     total_sum_evals::Int64,
     last_iter_evals::Vector{Int64},
@@ -45,7 +45,7 @@ function printUpdate(
     norm_p_res::T,
     norm_d_res::T,
     use_double_sweep::Bool,
-) where {T<:AbstractFloat}
+) where {T<:AbstractFloat, U}
     @assert iter >= 0
     @assert secs >= 0
     @assert gap >= 0
@@ -53,7 +53,7 @@ function printUpdate(
     @assert dinf >= 0
     @assert compl >= 0
     @assert compl_not_psd_abs >= 0
-    @assert point.mu > 0
+    @assert real(point.mu) > 0
     @assert total_sum_evals >= 0
     @assert minimum(last_iter_evals) >= 0
     @assert length(last_iter_evals) == length(last_max_evals)
